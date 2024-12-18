@@ -7,16 +7,23 @@ Original file is located at
     https://colab.research.google.com/drive/1c5c5VK-K_IJd7loeAQJHIbQj38JcYSJO
 """
 
+#lets get the libraries
 import streamlit as st
 import pandas as pd
 import requests
 import json
-import os
+from streamlit_echarts import st_echarts
 
-# Define the series IDs you want to fetch
+#change those ids to readable names
 series_ids = ['LNS11000000', 'LNS13000000', 'LNS14000000', 'CES0000000001']
+series_names = {
+    "LNS11000000": "Civilian Labor Force",
+    "LNS13000000": "Civilian Unemployment",
+    "LNS14000000": "Unemployment Rate",
+    "CES0000000001": "Total Nonfarm Employment"
+}
 
-# API headers and payload
+#api headers lets fix
 headers = {'Content-type': 'application/json'}
 payload = json.dumps({
     "seriesid": series_ids,
@@ -24,19 +31,16 @@ payload = json.dumps({
     "endyear": "2024"
 })
 
-# Fetch data from the BLS API
-@st.cache_data(ttl="1d")  # Cache for 24 hours
-def collect_bls_data():
+#get the data to process
+@st.cache_data(ttl="1d")
+def collect_and_process_data():
     response = requests.post(
         'https://api.bls.gov/publicAPI/v2/timeseries/data/',
         headers=headers,
         data=payload
     )
-    return json.loads(response.text)
+    json_data = json.loads(response.text)
 
-# Process the JSON response into DataFrames
-@st.cache_data(ttl="1d")  # Cache for 24 hours
-def process_bls_data(json_data):
     dataframes_dict = {}
     for series in json_data['Results']['series']:
         series_id = series['seriesID']
@@ -49,24 +53,99 @@ def process_bls_data(json_data):
             month = period.replace('M', '')
             parsed_data.append({
                 'Year': year,
-                'Period': period,
                 'Month': month,
-                'Value': value
+                'Value': value,
+                'Date': pd.to_datetime(f"{year}-{month}", format='%Y-%m', errors='coerce')
             })
 
         df = pd.DataFrame(parsed_data)
-        df['Date'] = pd.to_datetime(df['Year'] + '-' + df['Month'], format='%Y-%m', errors='coerce')
-        df = df[['Date', 'Value', 'Year', 'Month', 'Period']]
-        dataframes_dict[series_id] = df
+        dataframes_dict[series_id] = df.sort_values(by='Date')
 
     return dataframes_dict
 
-# Main execution
-json_data = collect_bls_data()
-dataframes_dict = process_bls_data(json_data)
+#collect data
+dataframes_dict = collect_and_process_data()
 
-# Save DataFrames to CSV
+#use the streamlit chart builder code
+def build_echarts_option(series_data, title, y_label, colors):
+    series_list = []
+    for i, (series_id, df) in enumerate(series_data.items()):
+        series_list.append({
+            "type": "line",
+            "name": series_names[series_id],
+            "data": df[['Date', 'Value']].values.tolist(),
+            "showSymbol": False,
+            "lineStyle": {"color": colors[i]},
+            "itemStyle": {"color": colors[i]},
+            "emphasis": {"focus": "series"}
+        })
+
+    return {
+        "animationDuration": 10000,
+        "title": {"text": title},
+        "tooltip": {"trigger": "axis"},
+        "xAxis": {"type": "time", "name": "Year"},
+        "yAxis": {"name": y_label},
+        "series": series_list,
+        "color": colors
+    }
+
+#streamlit charts
+st.title("BLS Data Visualizations")
+st.write("Line charts comparing key labor statistics.")
+
+#purple and green colors :)
+color_palette = ["#8E44AD", "#27AE60"]
+
+#Civilian Labor Force vs Civilian Unemployment
+st.markdown("## Civilian Labor Force vs Civilian Unemployment")
+st.write("This chart compares the Civilian Labor Force with Civilian Unemployment over time.")
+option1 = build_echarts_option(
+    {
+        "LNS11000000": dataframes_dict['LNS11000000'],
+        "LNS13000000": dataframes_dict['LNS13000000']
+    },
+    "Civilian Labor Force vs Civilian Unemployment",
+    "Value",
+    color_palette
+)
+st_echarts(options=option1, height="500px")
+
+#Civilian Labor Force vs Total Nonfarm Employment
+st.markdown("## Civilian Labor Force vs Total Nonfarm Employment")
+st.write("This chart compares the Civilian Labor Force with Total Nonfarm Employment over time.")
+option2 = build_echarts_option(
+    {
+        "LNS11000000": dataframes_dict['LNS11000000'],
+        "CES0000000001": dataframes_dict['CES0000000001']
+    },
+    "Civilian Labor Force vs Total Nonfarm Employment",
+    "Value",
+    color_palette
+)
+st_echarts(options=option2, height="500px")
+
+#Civilian Labor Force vs Unemployment Rate
+st.markdown("## Civilian Labor Force vs Unemployment Rate")
+st.write("This chart compares the Civilian Labor Force with the Unemployment Rate over time.")
+option3 = build_echarts_option(
+    {
+        "LNS11000000": dataframes_dict['LNS11000000'],
+        "LNS14000000": dataframes_dict['LNS14000000']
+    },
+    "Civilian Labor Force vs Unemployment Rate",
+    "Value",
+    color_palette
+)
+st_echarts(options=option3, height="500px")
+
+#add csv download button
+st.markdown("## Download Data as CSV")
+st.write("Click below to download the data used in these charts.")
 for series_id, df in dataframes_dict.items():
-    csv_file = f"{series_id}.csv"
-    df.to_csv(csv_file, index=False)
-    print(f"Saved {csv_file}")
+    st.download_button(
+        label=f"Download {series_names[series_id]} Data",
+        data=df.to_csv(index=False),
+        file_name=f"{series_names[series_id]}.csv",
+        mime="text/csv"
+    )
