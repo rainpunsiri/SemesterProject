@@ -7,14 +7,13 @@ Original file is located at
     https://colab.research.google.com/drive/1c5c5VK-K_IJd7loeAQJHIbQj38JcYSJO
 """
 
-#lets get the libraries
+#import libraries
 import streamlit as st
 import pandas as pd
 import requests
 import json
-from streamlit_echarts import st_echarts
 
-#change those ids to readable names
+#change those IDs to readable names
 series_ids = ['LNS11000000', 'LNS13000000', 'LNS14000000', 'CES0000000001']
 series_names = {
     "LNS11000000": "Civilian Labor Force",
@@ -23,7 +22,7 @@ series_names = {
     "CES0000000001": "Total Nonfarm Employment"
 }
 
-#api headers lets fix
+#API headers
 headers = {'Content-type': 'application/json'}
 payload = json.dumps({
     "seriesid": series_ids,
@@ -31,7 +30,7 @@ payload = json.dumps({
     "endyear": "2024"
 })
 
-#get the data to process
+#grab and process data
 @st.cache_data(ttl="1d")
 def collect_and_process_data():
     response = requests.post(
@@ -63,85 +62,20 @@ def collect_and_process_data():
 
     return dataframes_dict
 
-#collect data
 dataframes_dict = collect_and_process_data()
 
-#use the streamlit chart builder code
-def build_echarts_option(series_data, title, y_label, colors):
-    series_list = []
-    for i, (series_id, df) in enumerate(series_data.items()):
-        series_list.append({
-            "type": "line",
-            "name": series_names[series_id],
-            "data": df[['Date', 'Value']].values.tolist(),
-            "showSymbol": False,
-            "lineStyle": {"color": colors[i]},
-            "itemStyle": {"color": colors[i]},
-            "emphasis": {"focus": "series"}
-        })
+#streamlit App
+st.title("BLS Data Overview")
+st.write("Displaying key labor statistics retrieved from the BLS API.")
 
-    return {
-        "animationDuration": 10000,
-        "title": {"text": title},
-        "tooltip": {"trigger": "axis"},
-        "xAxis": {"type": "time", "name": "Year"},
-        "yAxis": {"name": y_label},
-        "series": series_list,
-        "color": colors
-    }
+#display raw data for each series
+st.markdown("## Raw Data Tables")
+for series_id, df in dataframes_dict.items():
+    st.subheader(series_names[series_id])
+    st.dataframe(df)  # Show data as table
 
-#streamlit charts
-st.title("BLS Data Visualizations")
-st.write("Line charts comparing key labor statistics.")
-
-#purple and green colors :)
-color_palette = ["#8E44AD", "#27AE60"]
-
-#Civilian Labor Force vs Civilian Unemployment
-st.markdown("## Civilian Labor Force vs Civilian Unemployment")
-st.write("This chart compares the Civilian Labor Force with Civilian Unemployment over time.")
-option1 = build_echarts_option(
-    {
-        "LNS11000000": dataframes_dict['LNS11000000'],
-        "LNS13000000": dataframes_dict['LNS13000000']
-    },
-    "Civilian Labor Force vs Civilian Unemployment",
-    "Value",
-    color_palette
-)
-st_echarts(options=option1, height="500px")
-
-#Civilian Labor Force vs Total Nonfarm Employment
-st.markdown("## Civilian Labor Force vs Total Nonfarm Employment")
-st.write("This chart compares the Civilian Labor Force with Total Nonfarm Employment over time.")
-option2 = build_echarts_option(
-    {
-        "LNS11000000": dataframes_dict['LNS11000000'],
-        "CES0000000001": dataframes_dict['CES0000000001']
-    },
-    "Civilian Labor Force vs Total Nonfarm Employment",
-    "Value",
-    color_palette
-)
-st_echarts(options=option2, height="500px")
-
-#Civilian Labor Force vs Unemployment Rate
-st.markdown("## Civilian Labor Force vs Unemployment Rate")
-st.write("This chart compares the Civilian Labor Force with the Unemployment Rate over time.")
-option3 = build_echarts_option(
-    {
-        "LNS11000000": dataframes_dict['LNS11000000'],
-        "LNS14000000": dataframes_dict['LNS14000000']
-    },
-    "Civilian Labor Force vs Unemployment Rate",
-    "Value",
-    color_palette
-)
-st_echarts(options=option3, height="500px")
-
-#add csv download button
+#download CSV buttons
 st.markdown("## Download Data as CSV")
-st.write("Click below to download the data used in these charts.")
 for series_id, df in dataframes_dict.items():
     st.download_button(
         label=f"Download {series_names[series_id]} Data",
